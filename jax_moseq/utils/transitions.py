@@ -47,6 +47,88 @@ def count_transitions(num_states, stateseqs, mask):
     )
     return transition_counts
 
+    
+#------------------------------------------------------------#
+#            Sticky transition matrix resampling             #
+#------------------------------------------------------------#
+
+def sample_sticky_transitions(seed, transition_counts, beta, kappa):
+    """
+    Sample a sticky HMM transition matrix.
+    Parameters
+    ----------
+    seed : jr.PRNGKey
+        JAX random seed.
+    transition_counts : jax array of shape (num_states, num_states)
+        The number of transitions between every pair of states.
+    beta : scalar
+        Hyperparameter on uniformity of outgoing transitions.
+    kappa : scalar
+        State persistence (i.e. "stickiness") hyperparameter.
+    Returns
+    -------
+    pi : jax_array of shape (num_states, num_states)
+        Transition probabilities.
+    """
+    num_states = transition_counts.shape[0]
+    sufficient_stats = transition_counts + \
+            beta + kappa * jnp.eye(num_states)
+    pi = jr.dirichlet(seed, sufficient_stats)
+    return pi
+
+
+def resample_sticky_transitions(seed, num_states, z, mask, beta, kappa, **kwargs):
+    """
+    Resample a sticky HMM transition matrix.
+    Parameters
+    ----------
+    seed : jr.PRNGKey
+        JAX random seed.
+    num_states : int
+        Number of states.
+    z : jax_array of shape (..., T - n_lags)
+        Discrete state sequences.
+    mask : jax array of shape (..., T)
+        Binary indicator for which data points are valid.
+    beta, kappa
+        See :py:func:`jax_moseq.utils.transitions.sample_sticky_transitions`.
+    kwargs : dict
+        Overflow, for convenience.
+    Returns
+    -------
+    pi : jax_array of shape (num_states, num_states)
+        Transition probabilities.
+    """
+    transition_counts = count_transitions(num_states, z, mask)
+    pi = sample_sticky_transitions(seed, transition_counts, beta, kappa)
+    return pi
+
+
+def init_sticky_transitions(seed, num_states, kappa, gamma, **kwargs):
+    """
+    Initialize the transition parameters of a sticky transition matrix
+    Parameters
+    ----------
+    seed : jr.PRNGKey
+        JAX random seed.
+    num_states : int
+        Max number of HMM states.
+    beta, kappa
+        See :py:func:`jax_moseq.utils.transitions.sample_sticky_transitions`.
+    kwargs : dict
+        Overflow, for convenience.
+    Returns
+    -------
+    pi : jax_array of shape (num_states, num_states)
+        Transition probabilities.
+    """
+    pseudo_counts = jnp.zeros((num_states, num_states))
+    pi = sample_sticky_transitions(seed, pseudo_counts, beta, kappa)
+    return pi
+
+#------------------------------------------------------------#
+# Hierarchical Dirichlet Process (HDP) transition resampling #
+#------------------------------------------------------------#
 
 @njit
 def _sample_loyal_crf_table_counts(
